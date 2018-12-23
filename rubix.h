@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <math.h>
 
 #define WINDOW_TITLE "RubixCube"
 
@@ -35,3 +36,4 @@ void cube(unsigned int n);
 Face canonicalFace(RubixCol c, float offset);
 void square(Face f, float *p, RubixCol c);
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void centerOnCorner(unsigned char c);

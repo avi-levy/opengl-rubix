@@ -2,8 +2,9 @@
 
 double x,y;
 bool mouseActive;
+int corner;
 Axis rotMode;
-float colors[Faces][3] = {{1,0,0},{0,0,1},{1,1,1},{0,.5,0},{1,.75,0},{1,1,0}};
+float colors[Faces][3] = {{1,0,0}, {0,0,1}, {1,1,1}, {0,.5,0}, {1,.75,0}, {1,1,0}};
 
 int main(int argc, char *argv[]) {
   GLFWwindow* window = prepareGlfw();
@@ -11,14 +12,16 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  mouseActive = false;
+  mouseActive = true;
   rotMode = Front;
   unsigned int n;
+  corner = 0;
   if (argc < 2 || sscanf(argv[1], "%i", &n) != 1) {
     n = 3;
   }
   float scale = (float)1/(2*n);
   glScalef(scale, scale, scale);
+
   while (!glfwWindowShouldClose(window)) {
     render(window, n);
     glfwPollEvents();
@@ -37,11 +40,15 @@ void render(GLFWwindow* window, unsigned int n) {
     glBegin(GL_POINTS);
       glfwGetCursorPos(window, &curx, &cury);
       glColor3f(0, .75, 1);
-      glVertex3f((curx - x)/100, (y - cury)/100, 0);
+      glVertex3f((float)(n*(curx - x))/1000, (float)(n*(y - cury))/1000, 0);
     glEnd();
     glPopMatrix();
   }
 
+  glMatrixMode(GL_PROJECTION);
+  centerOnCorner(corner);
+
+  glMatrixMode(GL_MODELVIEW);
   cube(n);
 
   if (!mouseActive) {
@@ -114,6 +121,29 @@ void cube(unsigned int n) {
   }
 }
 
+void centerOnCorner(unsigned char c) {
+  int i;
+  int x[3];
+  for (i = 0; i < 3; i++) {
+    x[i] = (c % 2) ? 1 : -1;
+    c /= 2;
+  }
+
+  float isom[4*4] = {
+    1/sqrt(2),1/sqrt(6),1/sqrt(3),0,
+    -1/sqrt(2),1/sqrt(6),1/sqrt(3),0,
+    0,-2/sqrt(6),1/sqrt(3),0,
+    0,0,0,1,
+  };
+
+  for (i = 0; i < 4*4; i++) {
+    if (i < 4*3) {
+      isom[i] *= x[i/4];
+    }
+  }
+  glLoadMatrixf(isom);
+}
+
 Axis keyToAxis(int key) {
   switch (key) {
     case GLFW_KEY_F:
@@ -128,6 +158,10 @@ Axis keyToAxis(int key) {
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
   if (action != GLFW_PRESS) {
+    return;
+  }
+  if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
+    corner = key - GLFW_KEY_1;
     return;
   }
   switch (key) {
@@ -161,7 +195,7 @@ GLFWwindow* prepareGlfw() {
   }
   monitor = glfwGetPrimaryMonitor();
   mode = glfwGetVideoMode(monitor);
-  window = glfwCreateWindow(10, 10, WINDOW_TITLE, NULL, NULL);
+  window = glfwCreateWindow(1, 1, WINDOW_TITLE, NULL, NULL);
   if (!window) {
     glfwTerminate();
     return NULL;
