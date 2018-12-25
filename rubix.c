@@ -23,21 +23,18 @@ void normalizeIsometric() {
 }
 
 int main(int argc, char *argv[]) {
-  int view[2] = {0, 0};
-  GLFWwindow* window = prepareGlfw(view);
+  unsigned int n;
+  GLFWwindow* window = prepareGlfw(&phys.viewport);
   if (window == NULL) {
     return EXIT_FAILURE;
   }
   printf("OpenGL %s\n", glGetString(GL_VERSION));
-  unsigned int n;
-
   if (argc < 2 || sscanf(argv[1], "%i", &n) != 1) {
     n = 3;
     printf(USAGE);
   }
   normalizeIsometric();
-  initCube(n, 1.1, view);
-
+  initCube(n, 1.1);
   while (!glfwWindowShouldClose(window)) {
     render(window);
     glfwPollEvents();
@@ -48,25 +45,17 @@ int main(int argc, char *argv[]) {
 
 void render(GLFWwindow* window) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
   glfwGetCursorPos(window, phys.mouse + 2, phys.mouse + 3);
-
   glMatrixMode(GL_PROJECTION);
   centerOnCorner();
-
   glMatrixMode(GL_MODELVIEW);
   cube();
-
   if (state.face < Faces) {
     state.duration++;
   }
-
   if (state.view < Faces) {
-    int b[Axes];
-    faceVector(state.view, b);
-    glRotatef(1, b[0], b[1], b[2]);
+    rotateFace(state.view, 1);
   }
-
   glfwSwapBuffers(window);
 }
 
@@ -99,18 +88,18 @@ void insert(FaceName f, float a[Axes-1], float b, float c) {
   glVertex3f(e[0], e[1], e[2]);
 }
 
+void rotateFace(FaceName f, float angle) {
+  float *v = phys.faces[f].vector;
+  glRotatef(angle, v[0], v[1], v[2]);
+}
+
 void clamp(float *f) {
   float m = phys.boundingBox;
-  if (*f > m) {
-    *f = m;
-  }
-  if (*f < -m) {
-    *f = -m;
-  }
+  if (*f > m) *f = m;
+  if (*f < -m) *f = -m;
 }
 
 void dot(FaceName f, FaceName c) {
-  int scale = 20;
   float a[2], p[2] = {0, 0};
 
   glBegin(GL_POINTS);
@@ -118,7 +107,7 @@ void dot(FaceName f, FaceName c) {
 
   for (int i = 0; i < 2; i++) {
     a[i] = phys.mouse[i+2] - phys.mouse[i];
-    a[i] /= scale;
+    a[i] *= phys.sensitivity;
     clamp(a + i);
   }
 
@@ -175,13 +164,14 @@ int faceDir(Axis to, Axis from) {
 
 void cube() {
   float p[Axes-1];
-  int b[Axes], c[Axes-1], d, n = phys.cubies;
-  faceVector(state.face, b);
+  int c[Axes-1], d, n = phys.cubies;
+  //faceVector(state.face, b);
 
   for (unsigned int f = 0; f < Faces; f++) {
     glPushMatrix();
     if (f == state.face) {
-      glRotatef(state.duration, b[0], b[1], b[2]);
+      rotateFace(state.face, state.duration);
+      //glRotatef(state.duration, b[0], b[1], b[2]);
       if (state.mouseActive) {
         dot(f, White);
       }
@@ -194,7 +184,8 @@ void cube() {
           d = faceDir(state.face % Axes, f % Axes);
           // check if the current square is adjacent to the face in motion
           if (c[d] == ((state.face < Axes) ? n - 1 : 0)) {
-            glRotatef(state.duration, b[0], b[1], b[2]);
+            rotateFace(state.face, state.duration);
+            //glRotatef(state.duration, b[0], b[1], b[2]);
             border(f, p, state.mouseActive ? Blue : White);
           }
         }
@@ -217,10 +208,8 @@ void centerOnCorner() {
     x[i] = (c % 2) ? 1 : -1;
     c /= 2;
   }
-
   // load the isometric matrix centered on the (1,1,1) corner
   memcpy(isom, isometric, MATRIX_SIZE * sizeof(float));
-
   // recenter the matrix on the current corner
   for (i = 0; i < MATRIX_SIZE; i++) {
     isom[i] *= x[i/4];
@@ -243,30 +232,33 @@ void initializeCorner(Corner *c) {
   c->orientation = 0;
 }
 
-void initPhys(const unsigned int n, const float spacing, const int *view) {
+void initPhys(const unsigned int n, const float spacing) {
   float s = (float)1/(2 * n);
   phys.cubies = n;
   phys.spacing = spacing;
   phys.boundingBox = spacing * (n - 1) + 1;
   phys.scale = s;
+  phys.sensitivity = (float)1/20;
+  glScalef(s, s, s);
   for (int i = 0; i < Faces; i++) {
     phys.faces[i].axis = i % Axes;
-    phys.faces[i].offset = (i / Axes) ? -phys.boundingBox : phys.boundingBox;
+    phys.faces[i].offset = (i < Axes) ? phys.boundingBox : -phys.boundingBox;
+    for (int j = 0; j < Axes; j++) {
+      phys.faces[i].vector[j] = (j == i % Axes) * phys.faces[i].offset;
+    }
   }
-  glScalef(s, s, s);
-  memcpy(&phys.viewport, view, 2 * sizeof(int));
   memset(&phys.mouse, 0, 4 * sizeof(int));
 }
 
-void initCube(const unsigned int n, const float spacing, const int *view) {
+void initCube(const unsigned int n, const float spacing) {
   state.face = state.view = Faces;
   initializeCorner(&state.corner);
-  initPhys(n, spacing, view);
+  initPhys(n, spacing);
   state.duration = 0;
   state.mouseActive = false;
 }
 
-FaceName keyToFaceName(int key) {
+FaceName keyToFaceName(const int key) {
   for (unsigned int i = 0; i < Faces; i++) {
     if (key > 0 && key == RubixColKey[i]) {
       return i;

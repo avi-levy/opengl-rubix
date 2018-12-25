@@ -46,6 +46,7 @@ typedef enum axis {
 typedef struct face {
   Axis axis;
   float offset;
+  float vector[Axes];
 } Face;
 
 typedef struct corner {
@@ -59,6 +60,7 @@ typedef struct phys {
   float spacing;
   float boundingBox;
   float scale;
+  float sensitivity;
   int viewport[2];
   double mouse[4];
 } Phys;
@@ -89,6 +91,6 @@ void centerOnCorner();
 void insert(FaceName f, float a[Axes-1], float b, float c);
 void axisInsert(Axis a, float* b, float c, float* d);
 void square(FaceName f, float *p, FaceName c);
-void faceVector(FaceName f, int* b);
+void rotateFace(FaceName f, float angle);
 FaceName keyToFaceName(int key);
-void initCube(const unsigned int n, const float spacing, const int *view);
+void initCube(const unsigned int n, const float spacing);
