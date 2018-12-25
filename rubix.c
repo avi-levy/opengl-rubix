@@ -16,10 +16,13 @@ int main(int argc, char *argv[]) {
   }
   normalizeIsometric();
   initCube(n, 1.1);
-  while (!glfwWindowShouldClose(window)) {
-    render(window);
-    glfwPollEvents();
+  if (cube != NULL) {
+    while (!glfwWindowShouldClose(window)) {
+      render(window);
+      glfwPollEvents();
+    }
   }
+  free(cube);
   glfwTerminate();
   return EXIT_SUCCESS;
 }
@@ -212,6 +215,20 @@ void initCube(const unsigned int n, const float spacing) {
   initPhys(n, spacing);
   state.duration = 0;
   state.mouseActive = false;
+
+  cube = malloc(Faces * n * n * sizeof(int));
+  if (!cube) {
+    return;
+  }
+
+  int c[Axes-1];
+  for (unsigned int f = 0; f < Faces; f++) {
+    for (c[0] = 0; c[0] < n; c[0]++) {
+      for (c[1] = 0; c[1] < n; c[1]++) {
+        cube[f][c[0]][c[1]] = f;
+      }
+    }
+  }
 }
 
 FaceName keyToFaceName(const int key) {

@@ -43,6 +43,8 @@ const int RubixColKey[Faces] = {
   GLFW_KEY_B, // starts orange
 };
 
+FaceName **cube[Faces];
+
 // There are two faces per axis
 typedef enum axis {
   Right, // R (+) and L (-)
