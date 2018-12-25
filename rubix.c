@@ -41,32 +41,22 @@ void render(GLFWwindow* window) {
 }
 
 //
-// Insert at location a in array b the value c and populate the rest from d in cyclic order.
-// Assume b has length equal to Axes, d has length one smaller, and a is a valid axis.
-//
-// Ordering is done as follows. Axes - a - 1, ... , Axes - 2, a, 0, 1, ... , Axes - a - 2
+// Insert at "a" in "b" the value "c" and populate the rest from "d" in cyclic order.
 //
 void axisInsert(Axis a, float* b, float c, float* d) {
   for (unsigned int i = 0; i < Axes; i++) {
-    if (i == a) {
-      b[i] = c;
-    }
-    if (i > a) {
-      b[i] = d[i - a - 1];
-    }
-    if (i < a) {
-      b[i] = d[i + Axes - a - 1];
-    }
+    if (i == a) b[i] = c;
+    if (i > a) b[i] = d[i - a - 1];
+    if (i < a) b[i] = d[i + Axes - a - 1];
   }
 }
 
 void insert(FaceName f, float a[Axes-1], float b, float c) {
-  float d[Axes-1];
-  float e[Axes];
+  float d[Axes-1], e[Axes];
   d[0] = a[0] + b;
   d[1] = a[1] + c;
   axisInsert(phys.faces[f].axis, e, phys.faces[f].offset, d);
-  glVertex3f(e[0], e[1], e[2]);
+  glVertex3fv(e);
 }
 
 void rotateFace(FaceName f, float angle) {
@@ -82,16 +72,13 @@ void clamp(float *f) {
 
 void dot(FaceName f, FaceName c) {
   float a[2], p[2] = {0, 0};
-
   glBegin(GL_POINTS);
   glColor3fv(colors[c]);
-
   for (int i = 0; i < 2; i++) {
     a[i] = phys.mouse[i+2] - phys.mouse[i];
     a[i] *= phys.sensitivity;
     clamp(a + i);
   }
-
   insert(f, p, a[0], a[1]);
   glEnd();
 }
@@ -99,12 +86,10 @@ void dot(FaceName f, FaceName c) {
 void border(FaceName f, float *p, FaceName c) {
   glBegin(GL_LINE_LOOP);
   glColor3fv(colors[c]);
-
   insert(f, p, -1, -1);
   insert(f, p, -1, 1);
   insert(f, p, 1, 1);
   insert(f, p, 1, -1);
-
   glEnd();
 }
 
@@ -114,15 +99,12 @@ void border(FaceName f, float *p, FaceName c) {
 void square(FaceName f, float *p, FaceName c) {
   glBegin(GL_TRIANGLES);
   glColor3fv(colors[c]);
-
   insert(f, p, -1, -1);
   insert(f, p, -1, 1);
   insert(f, p, 1, -1);
-
   insert(f, p, 1, 1);
   insert(f, p, -1, 1);
   insert(f, p, 1, -1);
-
   glEnd();
 }
 
@@ -146,13 +128,11 @@ int faceDir(Axis to, Axis from) {
 void cube() {
   float p[Axes-1];
   int c[Axes-1], d, n = phys.cubies;
-  //faceVector(state.face, b);
 
   for (unsigned int f = 0; f < Faces; f++) {
     glPushMatrix();
     if (f == state.face) {
       rotateFace(state.face, state.duration);
-      //glRotatef(state.duration, b[0], b[1], b[2]);
       if (state.mouseActive) {
         dot(f, White);
       }
