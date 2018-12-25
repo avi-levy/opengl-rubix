@@ -5,34 +5,42 @@
 #include <stdbool.h>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include <math.h>
+#include <math.h> // for sqrt
+#include <string.h> // for memcpy, memset
 
 #define WINDOW_TITLE "RubixCube"
-#define CUBE_COLORS {{0,0,1}, {1,1,1}, {1,0,0}, {1,.75,0}, {1,1,0}, {0,.5,0}}
-#define USAGE                                                         \
-  "command line usage: rubix <n>\n"                                   \
-  "\trenders an interactive n by n by n Rubik's cube\n\n"             \
-  "operation:\t(shift is denoted by \u21e7)\n"                        \
-  "\ta\tactivates mouse and pauses view rotation\n"                   \
-  "\t\u21e7a\tdeactivates mouse and resumes rotation\n"               \
-  "\tb\trotate bottom cube face counterclockwise in initial view\n"   \
-  "\t\u21e7b\ttoggle cube rotation along bottom face\n"               \
-  "\td\trotate downward cube face counterclockwise in initial view\n" \
-  "\t\u21e7d\ttoggle cube rotation along downward face\n"             \
-  "\tf\trotate front cube face counterclockwise in initial view\n"    \
-  "\t\u21e7f\ttoggle cube rotation along front face\n"                \
-  "\tl\trotate left cube face counterclockwise in initial view\n"     \
-  "\t\u21e7l\ttoggle cube rotation along left face\n"                 \
-  "\tr\trotate right cube face counterclockwise in initial view\n"    \
-  "\t\u21e7r\ttoggle cube rotation along right face\n"                \
-  "\tu\trotate upward cube face counterclockwise in initial view\n"   \
-  "\t\u21e7u\ttoggle cube rotation along upward face\n"
+#define MATRIX_SIZE 16
+#define CORNERS 8
 
+//                   Blue     White    Red      Green     Yellow   Orange
+#define CUBE_COLORS {{0,0,1}, {1,1,1}, {1,0,0}, {0,.5,0}, {1,1,0}, {1,.65,0}}
+
+typedef enum faceName {
+  Blue,
+  White,
+  Red,
+  Green,
+  Yellow,
+  Orange,
+  Faces // number of faces (6)
+} FaceName;
+
+// Standard ("singmaster") Rubik's cube face notation
+const int RubixColKey[Faces] = {
+  GLFW_KEY_R, // starts blue
+  GLFW_KEY_U, // starts white
+  GLFW_KEY_F, // starts red
+  GLFW_KEY_L, // starts green
+  GLFW_KEY_D, // starts yellow
+  GLFW_KEY_B, // starts orange
+};
+
+// There are two faces per axis
 typedef enum axis {
-  Right,
-  Upper,
-  Front,
-  Axes
+  Right, // R (+) and L (-)
+  Upper, // U (+) and D (-)
+  Front, // F (+) and B (-)
+  Axes // number of axes (3)
 } Axis;
 
 typedef struct face {
@@ -40,34 +48,47 @@ typedef struct face {
   float offset;
 } Face;
 
-typedef enum rubixCol {
-  Blue,
-  White,
-  Red,
-  Orange,
-  Yellow,
-  Green,
-  Faces
-} RubixCol;
+typedef struct corner {
+  int index;
+  int orientation;
+} Corner;
+
+typedef struct phys {
+  Face faces[Faces];
+  unsigned int cubies;
+  float spacing;
+  float boundingBox;
+  float scale;
+  int viewport[2];
+  double mouse[4];
+} Phys;
 
 typedef struct animationState {
-  Face face;
-  Face view;
+  FaceName face;
+  FaceName view;
   unsigned int duration;
+  Corner corner;
+  bool mouseActive;
 } AnimationState;
 
+#define USAGE                                                           \
+  "command line usage: rubix <n>\n"                                     \
+  "\trenders an interactive n by n by n Rubik's cube\n\n"               \
+  "Keyboard controls the following operations:\n"                       \
+  "\tFace twists (R, U, F, L, D, B)\n"                                  \
+  "\tCube rotations (shift + corresponding face twist key)\n"           \
+  "\tCenter view on corner (1 - 8, shift/control to set orientation)\n" \
+  "\tToggle mouse activation with A\n"
+
 GLFWwindow* prepareGlfw();
-void render(GLFWwindow* window, unsigned int n);
-void cube(unsigned int n, float spacing);
-Face canonicalFace(RubixCol c, float offset);
-void square(Face f, float *p, RubixCol c);
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
-void centerOnCorner(unsigned char c);
-void insert(Face f, float a[Axes-1], float b, float c);
+void render(GLFWwindow* window);
+void cube();
+void inputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void minimizeCallback(GLFWwindow* window, int iconified);
+void centerOnCorner();
+void insert(FaceName f, float a[Axes-1], float b, float c);
 void axisInsert(Axis a, float* b, float c, float* d);
-void faceVector(Face a, int* b);
-Face keyToFace(int key);
-bool equals(Face a, Face b);
-bool isFaceActive(Face f);
-void invalidateFace(Face *f);
-void invalidateAnimationState();
+void square(FaceName f, float *p, FaceName c);
+void faceVector(FaceName f, int* b);
+FaceName keyToFaceName(int key);
+void initCube(const unsigned int n, const float spacing, const int *view);

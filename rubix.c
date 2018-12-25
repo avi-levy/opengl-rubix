@@ -1,63 +1,67 @@
 #include "rubix.h"
 
 float colors[Faces][3] = CUBE_COLORS;
-double x, y;
-bool mouseActive;
-int corner;
+Phys phys;
 AnimationState state;
 
+// camera view directed at (1, 1, 1)
+float isometric[MATRIX_SIZE] = {
+  -1  , 1   , 1 , 0   ,
+  0   , -2  , 1 , 0   ,
+  1   , 1   , 1 , 0   ,
+  0   , 0   , 0 , -1  ,
+};
+
+void normalizeIsometric() {
+  float norm[4] = {0};
+  for (int i = 0; i < MATRIX_SIZE; i++) {
+    norm[i % 4] += isometric[i] * isometric[i];
+  }
+  for (int i = 0; i < MATRIX_SIZE; i++) {
+    isometric[i] /= sqrt(norm[i % 4]);
+  }
+}
+
 int main(int argc, char *argv[]) {
-  GLFWwindow* window = prepareGlfw();
+  int view[2] = {0, 0};
+  GLFWwindow* window = prepareGlfw(view);
   if (window == NULL) {
     return EXIT_FAILURE;
   }
-
-  mouseActive = false;
+  printf("OpenGL %s\n", glGetString(GL_VERSION));
   unsigned int n;
-  corner = 0;
-  invalidateAnimationState();
 
   if (argc < 2 || sscanf(argv[1], "%i", &n) != 1) {
     n = 3;
     printf(USAGE);
   }
-  float scale = (float)1/(2*n);
-  glScalef(scale, scale, scale);
+  normalizeIsometric();
+  initCube(n, 1.1, view);
 
   while (!glfwWindowShouldClose(window)) {
-    render(window, n);
+    render(window);
     glfwPollEvents();
   }
   glfwTerminate();
   return EXIT_SUCCESS;
 }
 
-void render(GLFWwindow* window, unsigned int n) {
+void render(GLFWwindow* window) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  if (mouseActive) {
-    double curx, cury;
-    glPushMatrix();
-    glLoadIdentity();
-    glBegin(GL_POINTS);
-      glfwGetCursorPos(window, &curx, &cury);
-      glColor3f(0, .75, 1);
-      glVertex3f((float)(n*(curx - x))/1000, (float)(n*(y - cury))/1000, 0);
-    glEnd();
-    glPopMatrix();
-  }
+  glfwGetCursorPos(window, phys.mouse + 2, phys.mouse + 3);
 
   glMatrixMode(GL_PROJECTION);
-  centerOnCorner(corner);
+  centerOnCorner();
 
   glMatrixMode(GL_MODELVIEW);
-  cube(n, 1.1);
+  cube();
 
-  if (isFaceActive(state.face)) {
+  if (state.face < Faces) {
     state.duration++;
   }
 
-  if (!mouseActive && isFaceActive(state.view)) {
+  if (state.view < Faces) {
     int b[Axes];
     faceVector(state.view, b);
     glRotatef(1, b[0], b[1], b[2]);
@@ -67,7 +71,7 @@ void render(GLFWwindow* window, unsigned int n) {
 }
 
 //
-// Insert at location a in array b the value c and populate the rest from d.
+// Insert at location a in array b the value c and populate the rest from d in cyclic order.
 // Assume b has length equal to Axes, d has length one smaller, and a is a valid axis.
 //
 // Ordering is done as follows. Axes - a - 1, ... , Axes - 2, a, 0, 1, ... , Axes - a - 2
@@ -86,16 +90,58 @@ void axisInsert(Axis a, float* b, float c, float* d) {
   }
 }
 
-void insert(Face f, float a[Axes-1], float b, float c) {
+void insert(FaceName f, float a[Axes-1], float b, float c) {
   float d[Axes-1];
   float e[Axes];
   d[0] = a[0] + b;
   d[1] = a[1] + c;
-  axisInsert(f.axis, e, f.offset, d);
+  axisInsert(phys.faces[f].axis, e, phys.faces[f].offset, d);
   glVertex3f(e[0], e[1], e[2]);
 }
 
-void square(Face f, float *p, RubixCol c) {
+void clamp(float *f) {
+  float m = phys.boundingBox;
+  if (*f > m) {
+    *f = m;
+  }
+  if (*f < -m) {
+    *f = -m;
+  }
+}
+
+void dot(FaceName f, FaceName c) {
+  int scale = 20;
+  float a[2], p[2] = {0, 0};
+
+  glBegin(GL_POINTS);
+  glColor3fv(colors[c]);
+
+  for (int i = 0; i < 2; i++) {
+    a[i] = phys.mouse[i+2] - phys.mouse[i];
+    a[i] /= scale;
+    clamp(a + i);
+  }
+
+  insert(f, p, a[0], a[1]);
+  glEnd();
+}
+
+void border(FaceName f, float *p, FaceName c) {
+  glBegin(GL_LINE_LOOP);
+  glColor3fv(colors[c]);
+
+  insert(f, p, -1, -1);
+  insert(f, p, -1, 1);
+  insert(f, p, 1, 1);
+  insert(f, p, 1, -1);
+
+  glEnd();
+}
+
+//
+// The color to draw the face is determined by the face name initial color.
+//
+void square(FaceName f, float *p, FaceName c) {
   glBegin(GL_TRIANGLES);
   glColor3fv(colors[c]);
 
@@ -110,150 +156,142 @@ void square(Face f, float *p, RubixCol c) {
   glEnd();
 }
 
-void cube(unsigned int n, float spacing) {
-  float p[Axes-1];
-  float maxDim = spacing * (n - 1) + 1;;
-  bool shouldRotate;
-  int b[Axes];
-  int c[Axes-1];
-  int d;
-  Face f;
-  faceVector(state.face, b);
-
-  for (c[0] = 0; c[0] < n; c[0]++) {
-    p[0] = spacing * (2*c[0] - (int)n + 1);
-    for (c[1] = 0; c[1] < n; c[1]++) {
-      p[1] = spacing * (2*c[1] - (int)n + 1);
-      for (unsigned int k = 0; k < Faces; k++) {
-        f = canonicalFace(k, maxDim);
-        glPushMatrix();
-        shouldRotate = false;
-        if (isFaceActive(state.face)) {
-          if (equals(f, state.face)) {
-            shouldRotate = true;
-          }
-          if (f.axis != state.face.axis) {
-            d = (int)(f.axis) - (int)(state.face.axis) - 1;
-            if (d < 0) {
-              d += Axes;
-            }
-            d = Axes - 2 - d;
-            // todo: verify if I worked out the signs correctly here
-            if (c[d] == 0 && state.face.offset < 0) {
-              shouldRotate = true;
-            }
-            if (c[d] == n-1 && state.face.offset > 0) {
-              shouldRotate = true;
-            }
-          }
-          if (shouldRotate) {
-            glRotatef(state.duration, b[0], b[1], b[2]);
-          }
-        }
-        square(f, p, k);
-        glPopMatrix();
-      }
-    }
+//
+// in face coordinates, converts a cubie multi-index ("c")
+// into the physical offset of its center ("p")
+//
+void physFaceCoords(int *c, float *p, unsigned int len) {
+  for (unsigned int i = 0; i < len; i++) {
+    p[i] = phys.spacing * (2 * c[i] - (int)phys.cubies + 1);
   }
 }
 
-void centerOnCorner(unsigned char c) {
-  int i;
-  int x[4];
+//
+// returns the direction (in face coords of "from") to the face "to"
+//
+int faceDir(Axis to, Axis from) {
+  return (to > from) ? to - from - 1 : Axes + to - from - 1;
+}
+
+void cube() {
+  float p[Axes-1];
+  int b[Axes], c[Axes-1], d, n = phys.cubies;
+  faceVector(state.face, b);
+
+  for (unsigned int f = 0; f < Faces; f++) {
+    glPushMatrix();
+    if (f == state.face) {
+      glRotatef(state.duration, b[0], b[1], b[2]);
+      if (state.mouseActive) {
+        dot(f, White);
+      }
+    }
+    for (c[0] = 0; c[0] < n; c[0]++) {
+      for (c[1] = 0; c[1] < n; c[1]++) {
+        glPushMatrix();
+        physFaceCoords(c, p, Axes - 1);
+        if (state.face < Faces && state.face % Axes != f % Axes) {
+          d = faceDir(state.face % Axes, f % Axes);
+          // check if the current square is adjacent to the face in motion
+          if (c[d] == ((state.face < Axes) ? n - 1 : 0)) {
+            glRotatef(state.duration, b[0], b[1], b[2]);
+            border(f, p, state.mouseActive ? Blue : White);
+          }
+        }
+        square(f, p, f); // identity state until data update is added
+        glPopMatrix();
+      }
+    }
+    glPopMatrix();
+  }
+}
+
+void centerOnCorner() {
+  int c, i, x[4];
+  float isom[MATRIX_SIZE];
+  c = state.corner.index;
+  // the corner is represented by an index and an orientation
+  // even though there are 8 corners, we use 4 bits to represent it
+  // for convenience when performing matrix operations below.
   for (i = 0; i < 4; i++) {
-    x[i] = (c % 2) ? -1 : 1;
+    x[i] = (c % 2) ? 1 : -1;
     c /= 2;
   }
 
-  float isom[4*4] = {
-    1/sqrt(2),1/sqrt(6),1/sqrt(3),0,
-    -1/sqrt(2),1/sqrt(6),1/sqrt(3),0,
-    0,-2/sqrt(6),1/sqrt(3),0,
-    0,0,0,1,
-  };
+  // load the isometric matrix centered on the (1,1,1) corner
+  memcpy(isom, isometric, MATRIX_SIZE * sizeof(float));
 
-  for (i = 0; i < 4*4; i++) {
+  // recenter the matrix on the current corner
+  for (i = 0; i < MATRIX_SIZE; i++) {
     isom[i] *= x[i/4];
   }
   glLoadMatrixf(isom);
+  glRotatef(state.corner.orientation * 120, x[0], x[1], x[2]);
 }
 
 //
 // Face operations
 //
-void faceVector(Face a, int* b) {
-  unsigned int i;
-  for (i = 0; i < Axes; i++) {
-    b[i] = (i == a.axis) * ((a.offset > 0) ? -1 : 1);
+void faceVector(FaceName f, int* b) {
+  for (unsigned int i = 0; i < Axes; i++) {
+    b[i] = (i == f % Axes) * ((f < Axes) ? -1 : 1);
   }
 }
 
-Face canonicalFace(RubixCol c, float offset) {
-  Face f;
-  f.axis = c % (Faces/2);
-  f.offset = (c/(Faces/2)) ? -offset : offset;
-  return f;
+void initializeCorner(Corner *c) {
+  c->index = 0;
+  c->orientation = 0;
 }
 
-bool equals(Face a, Face b) {
-  if (a.axis != b.axis) {
-    return false;
+void initPhys(const unsigned int n, const float spacing, const int *view) {
+  float s = (float)1/(2 * n);
+  phys.cubies = n;
+  phys.spacing = spacing;
+  phys.boundingBox = spacing * (n - 1) + 1;
+  phys.scale = s;
+  for (int i = 0; i < Faces; i++) {
+    phys.faces[i].axis = i % Axes;
+    phys.faces[i].offset = (i / Axes) ? -phys.boundingBox : phys.boundingBox;
   }
-  if (a.offset > 0 && b.offset > 0) {
-    return true;
-  }
-  if (a.offset < 0 && b.offset < 0) {
-    return true;
-  }
-  return false;
+  glScalef(s, s, s);
+  memcpy(&phys.viewport, view, 2 * sizeof(int));
+  memset(&phys.mouse, 0, 4 * sizeof(int));
 }
 
-bool isFaceActive(Face f) {
-  return (f.axis < Axes) && (f.offset != 0);
-}
-
-void invalidateFace(Face *f) {
-  f->axis = Axes;
-  f->offset = 0;
-}
-
-void invalidateAnimationState() {
-  invalidateFace(&state.face);
-  invalidateFace(&state.view);
+void initCube(const unsigned int n, const float spacing, const int *view) {
+  state.face = state.view = Faces;
+  initializeCorner(&state.corner);
+  initPhys(n, spacing, view);
   state.duration = 0;
+  state.mouseActive = false;
 }
 
-Face keyToFace(int key) {
-  Face f;
-  f.offset = 1;
-  switch (key) {
-    case GLFW_KEY_B:
-      f.offset = -1;
-    case GLFW_KEY_F:
-      f.axis = Front;
-      break;
-    case GLFW_KEY_L:
-      f.offset = -1;
-    case GLFW_KEY_R:
-      f.axis = Right;
-      break;
-    case GLFW_KEY_D:
-      f.offset = -1;
-    case GLFW_KEY_U:
-    default:
-      f.axis = Upper;
-      break;
+FaceName keyToFaceName(int key) {
+  for (unsigned int i = 0; i < Faces; i++) {
+    if (key > 0 && key == RubixColKey[i]) {
+      return i;
+    }
   }
-  return f;
+  return Faces;
 }
 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-  Face new;
+void toggleAssignFace(FaceName *old, FaceName new) {
+  *old = (*old == new) ? Faces : new;
+}
+
+void inputCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
   if (action != GLFW_PRESS) {
     return;
   }
   if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
-    corner = key - GLFW_KEY_1;
+    state.corner.index = key - GLFW_KEY_1;
+    state.corner.orientation = 0;
+    if (mods & GLFW_MOD_SHIFT) {
+      state.corner.orientation++;
+    }
+    if (mods & GLFW_MOD_CONTROL) {
+      state.corner.orientation--;
+    }
     return;
   }
   switch (key) {
@@ -262,41 +300,31 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
       glfwSetWindowShouldClose(window, GLFW_TRUE);
       break;
     case GLFW_KEY_A:
-      if (mods & GLFW_MOD_SHIFT) {
-        printf("deactivating mouse\n");
-        mouseActive = false;
-      } else {
-        mouseActive = true;
-        glfwGetCursorPos(window, &x, &y);
-        printf("activating mouse: (x = %f, y = %f)\n", x, y);
-      }
+      glfwGetCursorPos(window, phys.mouse, phys.mouse + 1);
+      state.mouseActive ^= true;
       break;
-    case GLFW_KEY_B:
-    case GLFW_KEY_D:
-    case GLFW_KEY_F:
-    case GLFW_KEY_L:
-    case GLFW_KEY_R:
-    case GLFW_KEY_U:
-      new = keyToFace(key);
-      if (mods & GLFW_MOD_SHIFT) {
-        if (isFaceActive(state.view) && equals(new, state.view)) {
-          invalidateFace(&state.view);
-        } else {
-          state.view = new;
+    default:
+      for (int i = 0; i < Faces; i++) {
+        if (key == RubixColKey[i]) {
+          if (mods & GLFW_MOD_SHIFT) {
+            toggleAssignFace(&state.view, i);
+            break;
+          }
+          state.duration = 0;
+          toggleAssignFace(&state.face, i);
+          break;
         }
-        break;
       }
-      state.duration = 0;
-      if (isFaceActive(state.face) && equals(new, state.face)) {
-        invalidateFace(&state.face);
-      } else {
-        state.face = new;
-      }
-      break;
   }
 }
 
-GLFWwindow* prepareGlfw() {
+void minimizeCallback(GLFWwindow* window, int minimized) {
+    if (minimized) { // close when the window is minimized
+      glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
+}
+
+GLFWwindow* prepareGlfw(int *dim) {
   GLFWmonitor* monitor;
   const GLFWvidmode* mode;
   GLFWwindow* window;
@@ -304,7 +332,15 @@ GLFWwindow* prepareGlfw() {
     return NULL;
   }
   monitor = glfwGetPrimaryMonitor();
+  if (!monitor) {
+    return NULL;
+  }
   mode = glfwGetVideoMode(monitor);
+  if (!mode) {
+    return NULL;
+  }
+  dim[0] = mode->width;
+  dim[1] = mode->height;
   window = glfwCreateWindow(1, 1, WINDOW_TITLE, NULL, NULL);
   if (!window) {
     glfwTerminate();
@@ -313,14 +349,18 @@ GLFWwindow* prepareGlfw() {
   glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
   glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   glfwSetCursorPos(window, 0, 0);
-  glfwSetKeyCallback(window, key_callback);
+  glfwSetKeyCallback(window, inputCallback);
+  glfwSetWindowIconifyCallback(window, minimizeCallback);
   glfwMakeContextCurrent(window);
-  glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
   glPointSize(35);
-  glEnable(GL_POINT_SMOOTH);
-  glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+  glLineWidth(10);
   glEnable(GL_BLEND);
+  glEnable(GL_DEPTH_TEST);
+  glEnable(GL_POINT_SMOOTH);
+  glEnable(GL_LINE_SMOOTH);
+  glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+  glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   return window;
 }
