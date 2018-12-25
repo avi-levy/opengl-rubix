@@ -12,8 +12,13 @@
 #define MATRIX_SIZE 16
 #define CORNERS 8
 
-//                   Blue     White    Red      Green     Yellow   Orange
-#define CUBE_COLORS {{0,0,1}, {1,1,1}, {1,0,0}, {0,.5,0}, {1,1,0}, {1,.65,0}}
+// camera view directed at (1, 1, 1)
+float isometric[MATRIX_SIZE] = {
+  -1  , 1   , 1 , 0   ,
+  0   , -2  , 1 , 0   ,
+  1   , 1   , 1 , 0   ,
+  0   , 0   , 0 , -1  ,
+};
 
 typedef enum faceName {
   Blue,
@@ -25,7 +30,10 @@ typedef enum faceName {
   Faces // number of faces (6)
 } FaceName;
 
-// Standard ("singmaster") Rubik's cube face notation
+//                               Blue     White    Red      Green     Yellow   Orange
+const float colors[Faces][3] = {{0,0,1}, {1,1,1}, {1,0,0}, {0,.5,0}, {1,1,0}, {1,.65,0}};
+
+// Standard ("Singmaster") Rubik's cube face notation
 const int RubixColKey[Faces] = {
   GLFW_KEY_R, // starts blue
   GLFW_KEY_U, // starts white
@@ -82,7 +90,6 @@ typedef struct animationState {
   "\tCenter view on corner (1 - 8, shift/control to set orientation)\n" \
   "\tToggle mouse activation with A\n"
 
-GLFWwindow* prepareGlfw();
 void render(GLFWwindow* window);
 void cube();
 void inputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
@@ -94,3 +101,5 @@ void square(FaceName f, float *p, FaceName c);
 void rotateFace(FaceName f, float angle);
 FaceName keyToFaceName(int key);
 void initCube(const unsigned int n, const float spacing);
+void normalizeIsometric();
+GLFWwindow* prepareGlfw();

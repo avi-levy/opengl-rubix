@@ -1,26 +1,7 @@
 #include "rubix.h"
 
-float colors[Faces][3] = CUBE_COLORS;
 Phys phys;
 AnimationState state;
-
-// camera view directed at (1, 1, 1)
-float isometric[MATRIX_SIZE] = {
-  -1  , 1   , 1 , 0   ,
-  0   , -2  , 1 , 0   ,
-  1   , 1   , 1 , 0   ,
-  0   , 0   , 0 , -1  ,
-};
-
-void normalizeIsometric() {
-  float norm[4] = {0};
-  for (int i = 0; i < MATRIX_SIZE; i++) {
-    norm[i % 4] += isometric[i] * isometric[i];
-  }
-  for (int i = 0; i < MATRIX_SIZE; i++) {
-    isometric[i] /= sqrt(norm[i % 4]);
-  }
-}
 
 int main(int argc, char *argv[]) {
   unsigned int n;
@@ -227,11 +208,6 @@ void faceVector(FaceName f, int* b) {
   }
 }
 
-void initializeCorner(Corner *c) {
-  c->index = 0;
-  c->orientation = 0;
-}
-
 void initPhys(const unsigned int n, const float spacing) {
   float s = (float)1/(2 * n);
   phys.cubies = n;
@@ -252,7 +228,7 @@ void initPhys(const unsigned int n, const float spacing) {
 
 void initCube(const unsigned int n, const float spacing) {
   state.face = state.view = Faces;
-  initializeCorner(&state.corner);
+  state.corner.index = state.corner.orientation = 0;
   initPhys(n, spacing);
   state.duration = 0;
   state.mouseActive = false;
@@ -287,26 +263,36 @@ void inputCallback(GLFWwindow* window, int key, int scancode, int action, int mo
     return;
   }
   switch (key) {
-    case GLFW_KEY_ESCAPE:
-    case GLFW_KEY_Q:
-      glfwSetWindowShouldClose(window, GLFW_TRUE);
-      break;
-    case GLFW_KEY_A:
-      glfwGetCursorPos(window, phys.mouse, phys.mouse + 1);
-      state.mouseActive ^= true;
-      break;
-    default:
-      for (int i = 0; i < Faces; i++) {
-        if (key == RubixColKey[i]) {
-          if (mods & GLFW_MOD_SHIFT) {
-            toggleAssignFace(&state.view, i);
-            break;
-          }
-          state.duration = 0;
-          toggleAssignFace(&state.face, i);
+  case GLFW_KEY_ESCAPE:
+  case GLFW_KEY_Q:
+    glfwSetWindowShouldClose(window, GLFW_TRUE);
+    break;
+  case GLFW_KEY_A:
+    glfwGetCursorPos(window, phys.mouse, phys.mouse + 1);
+    state.mouseActive ^= true;
+    break;
+  default:
+    for (int i = 0; i < Faces; i++) {
+      if (key == RubixColKey[i]) {
+        if (mods & GLFW_MOD_SHIFT) {
+          toggleAssignFace(&state.view, i);
           break;
         }
+        state.duration = 0;
+        toggleAssignFace(&state.face, i);
+        break;
       }
+    }
+  }
+}
+
+void normalizeIsometric() {
+  float norm[4] = {0};
+  for (int i = 0; i < MATRIX_SIZE; i++) {
+    norm[i % 4] += isometric[i] * isometric[i];
+  }
+  for (int i = 0; i < MATRIX_SIZE; i++) {
+    isometric[i] /= sqrt(norm[i % 4]);
   }
 }
 
