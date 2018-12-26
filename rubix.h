@@ -30,8 +30,8 @@ typedef enum faceName {
   Faces // number of faces (6)
 } FaceName;
 
-//                               Blue     White    Red      Green     Yellow   Orange
-const float colors[Faces][3] = {{0,0,1}, {1,1,1}, {1,0,0}, {0,.5,0}, {1,1,0}, {1,.65,0}};
+//                               Blue     White    Red      Green     Yellow   Orange     Black
+const float colors[Faces+1][3] = {{0,0,1}, {1,1,1}, {1,0,0}, {0,.5,0}, {1,1,0}, {1,.5,0}, {0,0,0}};
 
 // Standard ("Singmaster") Rubik's cube face notation
 const int RubixColKey[Faces] = {
@@ -43,7 +43,7 @@ const int RubixColKey[Faces] = {
   GLFW_KEY_B, // starts orange
 };
 
-FaceName **cube[Faces];
+FaceName *data;
 
 // There are two faces per axis
 typedef enum axis {
@@ -53,11 +53,23 @@ typedef enum axis {
   Axes // number of axes (3)
 } Axis;
 
+#define FACES_PER_AXIS (Faces / Axes)
+
+// This struct stores drawing data for a given face
 typedef struct face {
+  FaceName adj[Faces-FACES_PER_AXIS];
   Axis axis;
   float offset;
   float vector[Axes];
 } Face;
+
+typedef struct cubie {
+  FaceName face;
+  int coord[Axes-1];
+} Cubie;
+
+Cubie *faceShift;
+Cubie *edgeShift;
 
 typedef struct corner {
   int index;
@@ -94,14 +106,13 @@ typedef struct animationState {
 
 void render(GLFWwindow* window);
 void cube();
-void inputCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-void minimizeCallback(GLFWwindow* window, int iconified);
+void twist(FaceName f);
 void centerOnCorner();
 void insert(FaceName f, float a[Axes-1], float b, float c);
-void axisInsert(Axis a, float* b, float c, float* d);
+void axisInsert(Axis a, float b, float c[Axes-1], float d[Axes]);
 void square(FaceName f, float *p, FaceName c);
 void rotateFace(FaceName f, float angle);
 FaceName keyToFaceName(int key);
 void initCube(const unsigned int n, const float spacing);
-void normalizeIsometric();
+void destroyCube();
 GLFWwindow* prepareGlfw();
