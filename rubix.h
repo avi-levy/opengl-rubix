@@ -77,7 +77,6 @@ typedef struct move {
 
 typedef struct faceGeom {
   Face adj[Faces-FACES_PER_AXIS]; // number of adjacent faces (4)
-  Axis axis;
   float offset;
   float vector[Axes];
 } FaceGeom;

@@ -144,7 +144,7 @@ void insert(Face f, float a[Axes-1], int b[Axes-1]) {
   for (Axis i = 0; i < Axes-1; i++) {
     d[i] = a[i] + b[i];
   }
-  axisInsert(phys.faces[f].axis, phys.faces[f].offset, d, e);
+  axisInsert(f % Axes, phys.faces[f].offset, d, e);
   glVertex3fv(e);
 }
 
@@ -241,7 +241,6 @@ void initPhys(const unsigned int n, const float spacing) {
   phys.scale = s;
   glScalef(s, s, s);
   for (Face f = 0; f < Faces; f++) {
-    phys.faces[f].axis = f % Axes;
     phys.faces[f].offset = (f < Axes) ? phys.boundingBox : -phys.boundingBox;
     for (Axis a = 0; a < Axes; a++) {
       phys.faces[f].vector[a] = (a == f % Axes) * phys.faces[f].offset;
