@@ -5,8 +5,8 @@ AnimationState state;
 
 int main(int argc, char *argv[]) {
   unsigned int n;
-  GLFWwindow* window = prepareGlfw(&phys.viewport);
-  if (window == NULL) {
+  GLFWwindow* w = prepareGlfw();
+  if (w == NULL) {
     return EXIT_FAILURE;
   }
   printf("OpenGL %s\n", glGetString(GL_VERSION));
@@ -14,38 +14,114 @@ int main(int argc, char *argv[]) {
     n = 3;
     printf(USAGE);
   }
-  initCube(n, 1.1);
-  if (data != NULL && faceShift != NULL && edgeShift != NULL) {
-    while (!glfwWindowShouldClose(window)) {
-      render(window);
+  if (initCube(n, 1.1)) {
+    while (!glfwWindowShouldClose(w)) {
+      render(w);
       glfwPollEvents();
     }
   }
-  destroyCube();
+  free(data);
   glfwTerminate();
   return EXIT_SUCCESS;
 }
 
-void render(GLFWwindow* window) {
+void render(GLFWwindow* w) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  glfwGetCursorPos(window, phys.mouse + 2, phys.mouse + 3);
   glMatrixMode(GL_PROJECTION);
-  centerOnCorner();
+  if (state.corner.index < CORNERS) {
+    centerOnCorner();
+    state.corner.index = CORNERS;
+  }
+  if (state.actions[Turn].f < Faces) {
+    rotate(Turn);
+  }
   glMatrixMode(GL_MODELVIEW);
-  cube();
-  if (state.face < Faces) {
-    if (state.duration >= 90) {
-      twist(state.face);
-      state.duration = 0;
-      state.face = Faces;
-    } else {
-      state.duration++;
+  cube(Twist);
+  glfwSwapBuffers(w);
+}
+
+//
+// returns the direction (in face coords of "from") to the face "to"
+//
+int faceDir(Face to, Face from) {
+  to %= Axes;
+  from %= Axes;
+  return (to > from) ? to - from - 1 : Axes + to - from - 1;
+}
+
+int edgeDir(Face to, Face from) {
+  return ((to < Axes) == (from < Axes)) ? phys.cubies - 1 : 0;
+}
+
+bool onBorder(Face to, Face from, int c[Axes-1]) {
+  return to < Faces && to % Axes != from % Axes && c[faceDir(to, from)] == edgeDir(to, from);
+}
+
+void set(Face f, const int c[Axes-1], Face v) {
+  int n = phys.cubies;
+  for (Axis j = 0; j < Axes - 1; j++) {
+    f *= n;
+    f += c[j];
+  }
+  data[f] = v;
+}
+
+Face get(Face f, const int c[Axes-1]) {
+  int n = phys.cubies;
+  for (Axis j = 0; j < Axes - 1; j++) {
+    f *= n;
+    f += c[j];
+  }
+  return data[f];
+}
+
+//
+// Computes the coordinates in face b of the i^th cubie
+// along the edge shared between faces a and b, oriented
+// such that i = 0 corresponds to the corner shared by
+// faces a, b, and c.
+//
+void coords(Face a, Face b, Face c, int e[Axes-1], int i) {
+  int n = phys.cubies, f = faceDir(a, b);
+  e[f] = edgeDir(a, b);
+  e[1-f] = edgeDir(b, c) ? i : n - 1 - i;
+}
+
+void getAdjacent(Face f, int i, int j, Face *e) {
+  for (Face k = i; k < i + j; k++) {
+    e[k - i] = phys.faces[f].adj[k % (Faces - FACES_PER_AXIS)];
+  }
+}
+
+void swapCubie(Face a, Face b, Face c, int i, Face *v) {
+  int d[Axes-1];
+  coords(a, b, c, d, i);
+  Face t = get(b, d);
+  if (*v < Faces) {
+    set(b, d, *v);
+  }
+  *v = t;
+}
+
+void twist(Move *m) {
+  Face f = m->f, inner = Faces, outer = Faces, adj[2];
+  for (int i = 0; i < phys.cubies; i++) {
+    for (Face g = 0; g <= Faces - FACES_PER_AXIS; g++) {
+      getAdjacent(f, m->o ? Faces - FACES_PER_AXIS - g : g, 2, adj);
+      swapCubie(f, adj[0], adj[1], i, &inner);
+      if (i) swapCubie(adj[0], f, adj[1], i, &outer);
     }
   }
-  if (state.view < Faces) {
-    rotateFace(state.view, 1);
-  }
-  glfwSwapBuffers(window);
+}
+
+void rotateFace(Face f, float angle) {
+  float *v = phys.faces[f].vector;
+  glRotatef(angle, v[0], v[1], v[2]);
+}
+
+void rotate(Action a) {
+  Move *m = &state.actions[a];
+  rotateFace(m->f, m->o ? (-1.0 * m->angle) : m->angle);
 }
 
 //
@@ -53,7 +129,7 @@ void render(GLFWwindow* window) {
 //
 void axisInsert(Axis a, float b, float c[Axes-1], float d[Axes]) {
   int j;
-  for (unsigned int i = 0; i < Axes; i++) {
+  for (Axis i = 0; i < Axes; i++) {
     if (i == a) {
       d[i] = b;
     } else {
@@ -63,210 +139,62 @@ void axisInsert(Axis a, float b, float c[Axes-1], float d[Axes]) {
   }
 }
 
-void insert(FaceName f, float a[Axes-1], float b, float c) {
+void insert(Face f, float a[Axes-1], int b[Axes-1]) {
   float d[Axes-1], e[Axes];
-  d[0] = a[0] + b;
-  d[1] = a[1] + c;
+  for (Axis i = 0; i < Axes-1; i++) {
+    d[i] = a[i] + b[i];
+  }
   axisInsert(phys.faces[f].axis, phys.faces[f].offset, d, e);
   glVertex3fv(e);
 }
 
-void rotateFace(FaceName f, float angle) {
-  float *v = phys.faces[f].vector;
-  glRotatef(angle, v[0], v[1], v[2]);
-}
-
-void clamp(float *f) {
-  float m = phys.boundingBox;
-  if (*f > m) *f = m;
-  if (*f < -m) *f = -m;
-}
-
-void dot(FaceName f, FaceName c) {
-  float a[2], p[2] = {0, 0};
-  glBegin(GL_POINTS);
-  glColor3fv(colors[c]);
-  for (int i = 0; i < 2; i++) {
-    a[i] = phys.mouse[i+2] - phys.mouse[i];
-    a[i] *= phys.sensitivity;
-    clamp(a + i);
+void square(Face f, const int c[Axes-1]) {
+  float p[Axes-1]; // stores coordinates of center of cubie c
+  int i, d[Axes-1];
+  for (Axis a = 0; a < Axes - 1; a++) {
+    p[a] = phys.spacing * (2 * c[a] - (int)phys.cubies + 1);
   }
-  insert(f, p, a[0], a[1]);
+  glBegin(GL_TRIANGLES); // draws a square by stitching two triangles
+  glColor3fv(colors[get(f, c)]);
+  for (i = 0; i < BORDER; i++) {
+    for (Axis a = 0; a < Axes - 1; a++) d[a] = ((i + a) % BORDER < BORDER/2) ? 1 : -1;
+    insert(f, p, d);
+    if (!(i % 2)) {
+      for (Axis a = 0; a < Axes - 1; a++) d[a] = -d[a];
+      insert(f, p, d);
+    }
+  }
+  glEnd();
+  glBegin(GL_LINE_LOOP); // outer border
+  glColor3fv(colors[Faces]);
+  for (i = 0; i < BORDER; i++) {
+    for (Axis a = 0; a < Axes - 1; a++) {
+      d[a] = ((i + a) % BORDER < BORDER/2) ? 1 : -1;
+    }
+    insert(f, p, d);
+  }
   glEnd();
 }
 
-void border(FaceName f, float *p, FaceName c) {
-  glBegin(GL_LINE_LOOP);
-  glColor3fv(colors[c]);
-  insert(f, p, -1, -1);
-  insert(f, p, -1, 1);
-  insert(f, p, 1, 1);
-  insert(f, p, 1, -1);
-  glEnd();
-}
-
-//
-// The color to draw the face is determined by the face name initial color.
-//
-void square(FaceName f, float *p, FaceName c) {
-  glBegin(GL_TRIANGLES);
-  glColor3fv(colors[c]);
-  insert(f, p, -1, -1);
-  insert(f, p, -1, 1);
-  insert(f, p, 1, -1);
-  insert(f, p, 1, 1);
-  insert(f, p, -1, 1);
-  insert(f, p, 1, -1);
-  glEnd();
-}
-
-//
-// in face coordinates, converts a cubie multi-index ("c")
-// into the physical offset of its center ("p")
-//
-void physFaceCoords(int *c, float *p, unsigned int len, bool flip) {
-  int n = phys.cubies;
-  for (unsigned int i = 0; i < len; i++) {
-    // p[i] = phys.spacing * (2 * (flip ? c[i] : n - 1 - c[i]) - (int)phys.cubies + 1);
-    p[i] = phys.spacing * (2 * c[i] - (int)phys.cubies + 1);
-  }
-}
-
-//
-// returns the direction (in face coords of "from") to the face "to"
-//
-int faceDir(FaceName to, FaceName from) {
-  to %= Axes;
-  from %= Axes;
-  return (to > from) ? to - from - 1 : Axes + to - from - 1;
-}
-
-int edgeDir(FaceName to, FaceName from) {
-  return (!(to < Axes) == !(from < Axes)) ? phys.cubies - 1 : 0;
-}
-
-bool onBorder(FaceName to, FaceName from, int c[Axes-1]) {
-  return c[faceDir(to, from)] == edgeDir(to, from);
-}
-
-//
-// cube color data getter and setter
-//
-void set(FaceName f, int c[Axes-1], FaceName color) {
-  int n = phys.cubies;
-  data[c[0] + c[1]*n + f*n*n] = color;
-}
-
-void setCubie(Cubie *c, FaceName color) {
-  set(c->face, c->coord, color);
-}
-
-FaceName get(FaceName f, int c[Axes-1]) {
-  int n = phys.cubies;
-  return data[c[0] + c[1]*n + f*n*n];
-}
-
-FaceName getCubie(Cubie *c) {
-  return get(c->face, c->coord);
-}
-
-int push(Cubie *c, FaceName f, int coord[Axes-1], int t) {
-  c[t].face = f;
-  memcpy(c[t].coord, coord, (Axes-1) * sizeof(int));
-  return t + 1;
-}
-
-//
-// Stores in g the cyclic ordering of faces adjacent to f.
-//
-void perm(FaceName f, FaceName *g) {
-  int j, k = 0;
-  for (unsigned int i = 0; i < Faces; i++) {
-    j = (f % FACES_PER_AXIS) ? Faces - 1 - i : i;
-    if (j % Axes == f % Axes) continue;
-    g[k++] = j;
-  }
-}
-
-//
-// Computes the coordinates in face b of the i^th cubie
-// along the edge shared between faces a and b, oriented
-// such that i = 0 corresponds to the corner shared by
-// faces a, b, and c.
-//
-void coords(FaceName a, FaceName b, FaceName c, int e[Axes-1], int i) {
-  int n = phys.cubies, f = faceDir(a, b);
-  e[f] = edgeDir(a, b);
-  e[1-f] = edgeDir(b, c) ? i : n - 1 - i;
-}
-
-//
-// This method requires c to be an array of length g * s.
-// It cyclically shift elements of the array forward by s.
-//
-void blockCyclicShift(Cubie *c, int g, int s) {
-  FaceName last, cur;
-  int t;
-  for (int i = 0; i < g; i++) {
-    t = i + (s - 1) * g;
-    last = getCubie(c + t);
-    for (int j = 0, t = i; j < s; j++, t += g) {
-      cur = getCubie(c + t);
-      setCubie(c + t, last);
-      last = cur;
+void cube(Action a) {
+  int c[Axes-1], n = phys.cubies;
+  Move *m = &state.actions[a];
+  if (m->f < Faces) {
+    if (m->angle > 0) {
+      m->f = Faces;
+    } else {
+      m->angle++;
     }
   }
-}
-
-FaceName getFaceCyclic(FaceName f, int i) {
-  return phys.faces[f].adj[i % (Faces - FACES_PER_AXIS)];
-}
-
-void twist(FaceName f) {
-  int t = 0, u = 0, n = phys.cubies, c[Axes-1];
-  FaceName adj, next;
-  for (unsigned int g = 0; g < Faces - FACES_PER_AXIS; g++) {
-    adj = getFaceCyclic(f, g);
-    next = getFaceCyclic(f, g + 1);
-    for (int i = 0; i < n; i++) {
-      coords(f, adj, next, c, i);
-      push(edgeShift, adj, c, t++);
-      if (i == n-1) continue;
-      coords(adj, f, next, c, i);
-      push(faceShift, f, c, u++);
-    }
-  }
-  blockCyclicShift(edgeShift, n, 4);
-  blockCyclicShift(faceShift, n - 1, 4);
-}
-
-void cube() {
-  float p[Axes-1];
-  int c[Axes-1], d, n = phys.cubies;
-
-  for (unsigned int f = 0; f < Faces; f++) {
-    glPushMatrix();
-    if (f == state.face) {
-      rotateFace(state.face, state.duration);
-      if (state.mouseActive) {
-        dot(f, White);
-      }
-    }
+  for (Face f = 0; f < Faces; f++) {
     for (c[0] = 0; c[0] < n; c[0]++) {
       for (c[1] = 0; c[1] < n; c[1]++) {
         glPushMatrix();
-        physFaceCoords(c, p, Axes - 1, f < Axes);
-        if (state.face < Faces && state.face % Axes != f % Axes) {
-          if (onBorder(state.face, f, c)) {
-            rotateFace(state.face, state.duration);
-          }
-        }
-        border(f, p, Faces);
-        square(f, p, get(f, c));
+        if (f == m->f || onBorder(m->f, f, c)) rotate(a);
+        square(f, c);
         glPopMatrix();
       }
     }
-    glPopMatrix();
   }
 }
 
@@ -288,16 +216,7 @@ void centerOnCorner() {
     isom[i] *= x[i/4];
   }
   glLoadMatrixf(isom);
-  glRotatef(state.corner.orientation * 120, x[0], x[1], x[2]);
-}
-
-//
-// Face operations
-//
-void faceVector(FaceName f, int* b) {
-  for (unsigned int i = 0; i < Axes; i++) {
-    b[i] = (i == f % Axes) * ((f < Axes) ? -1 : 1);
-  }
+  glRotatef(state.corner.orientation * DEGREES_IN_CIRCLE / 3, x[0], x[1], x[2]);
 }
 
 void normalizeIsometric() {
@@ -313,81 +232,83 @@ void normalizeIsometric() {
 void initPhys(const unsigned int n, const float spacing) {
   float s = (float)1/(2 * n);
   phys.cubies = n;
+  phys.cubiesPerFace = 1;
+  for (Axis a = 0; a < Axes - 1; a++) {
+    phys.cubiesPerFace *= n;
+  }
   phys.spacing = spacing;
   phys.boundingBox = spacing * (n - 1) + 1;
   phys.scale = s;
-  phys.sensitivity = (float)1/20;
   glScalef(s, s, s);
-  for (int i = 0; i < Faces; i++) {
-    phys.faces[i].axis = i % Axes;
-    phys.faces[i].offset = (i < Axes) ? phys.boundingBox : -phys.boundingBox;
-    for (int j = 0; j < Axes; j++) {
-      phys.faces[i].vector[j] = (j == i % Axes) * phys.faces[i].offset;
+  for (Face f = 0; f < Faces; f++) {
+    phys.faces[f].axis = f % Axes;
+    phys.faces[f].offset = (f < Axes) ? phys.boundingBox : -phys.boundingBox;
+    for (Axis a = 0; a < Axes; a++) {
+      phys.faces[f].vector[a] = (a == f % Axes) * phys.faces[f].offset;
     }
   }
-  memset(&phys.mouse, 0, 4 * sizeof(int));
 }
 
-void initCube(const unsigned int n, const float spacing) {
-  state.face = state.view = Faces;
-  state.corner.index = state.corner.orientation = 0;
-  normalizeIsometric(); // required before centering on a corner
-  initPhys(n, spacing);
-  state.duration = 0;
-  state.mouseActive = false;
-
-  data = malloc(Faces * n * n * sizeof(int));
-  // of the n^2 cubies on each face, 4(n-1) are adjacent to another face
-  faceShift = malloc(4 * (n-1) * sizeof(Cubie));
-  // each face is adjacent to 4n cubies on other faces
-  edgeShift = malloc(4 * n * sizeof(Cubie));;
-  if (!data || !faceShift || !edgeShift) {
-    return;
+void reset() {
+  for (int i = 0; i < Faces * phys.cubiesPerFace; i++) {
+    data[i] = i / phys.cubiesPerFace;
   }
+}
 
-  int c[Axes-1];
-  for (unsigned int f = 0; f < Faces; f++) {
-    perm(f, phys.faces[f].adj);
-    for (c[0] = 0; c[0] < n; c[0]++) {
-      for (c[1] = 0; c[1] < n; c[1]++) {
-        set(f, c, f);
+bool initCube(const unsigned int n, const float spacing) {
+  Face h;
+  for (Action a = 0; a < Actions; a++) {
+    state.actions[a].f = Faces;
+  }
+  state.corner.index = state.corner.orientation = 0;
+  normalizeIsometric();
+  initPhys(n, spacing);
+  data = malloc(Faces * phys.cubiesPerFace * sizeof(int));
+  if (data != NULL) {
+    reset(); // set cube to initial state
+    for (Face f = 0; f < Faces; f++) { // populate face adjacency graph
+      for (Face g = 0, k = 0; g < Faces; g++) {
+        h = (f % FACES_PER_AXIS) ? Faces - 1 - g : g;
+        if (h % Axes == f % Axes) continue;
+        phys.faces[f].adj[k++] = h;
       }
     }
   }
+  return data != NULL;
 }
 
-void destroyCube() {
-  free(data);
-  free(faceShift);
-  free(edgeShift);
-}
-
-FaceName keyToFaceName(const int key) {
-  for (unsigned int i = 0; i < Faces; i++) {
-    if (key > 0 && key == RubixColKey[i]) {
-      return i;
-    }
+Face keyToFace(const int key) {
+  Face f = 0;
+  for (; f < Faces; f++) {
+    if (key == FaceToKey[f]) break;
   }
-  return Faces;
+  return f;
 }
 
-void toggleAssignFace(FaceName *old, FaceName new) {
-  *old = (*old == new) ? Faces : new;
+void update(Action a, Face f, Orientation o) {
+  if (f == Faces) return;
+  Move *m = &state.actions[a];
+  if (a == Turn && m->f == f && m->o == o) {
+    m->f = Faces; // toggle turn state if pressed twice
+    return;
+  }
+  m->f = f;
+  m->o = o;
+  if (a == Twist) {
+    twist(m);
+    m->angle = -DEGREES_IN_CIRCLE / 4;
+  } else {
+    m->angle = 1;
+  }
 }
 
-void inputCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+void input(GLFWwindow* window, int key, int scancode, int action, int mods) {
   if (action != GLFW_PRESS) {
     return;
   }
   if (key >= GLFW_KEY_1 && key <= GLFW_KEY_8) {
     state.corner.index = key - GLFW_KEY_1;
-    state.corner.orientation = 0;
-    if (mods & GLFW_MOD_SHIFT) {
-      state.corner.orientation++;
-    }
-    if (mods & GLFW_MOD_CONTROL) {
-      state.corner.orientation--;
-    }
+    state.corner.orientation = (!!(mods & GLFW_MOD_SHIFT) - !!(mods & GLFW_MOD_CONTROL));
     return;
   }
   switch (key) {
@@ -395,68 +316,41 @@ void inputCallback(GLFWwindow* window, int key, int scancode, int action, int mo
   case GLFW_KEY_Q:
     glfwSetWindowShouldClose(window, GLFW_TRUE);
     break;
-  case GLFW_KEY_A:
-    glfwGetCursorPos(window, phys.mouse, phys.mouse + 1);
-    state.mouseActive ^= true;
+  case GLFW_KEY_C:
+    reset();
     break;
   default:
-    for (int i = 0; i < Faces; i++) {
-      if (key == RubixColKey[i]) {
-        if (mods & GLFW_MOD_SHIFT) {
-          toggleAssignFace(&state.view, i);
-          break;
-        }
-        state.duration = 0;
-        toggleAssignFace(&state.face, i);
-        break;
-      }
-    }
+    update((mods & GLFW_MOD_CONTROL) ? Turn : Twist, keyToFace(key),
+      (mods & GLFW_MOD_SHIFT) ? Counterclockwise : Clockwise);
+    break;
   }
 }
 
-void minimizeCallback(GLFWwindow* window, int minimized) {
-    if (minimized) { // close when the window is minimized
-      glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
+void focus(GLFWwindow* w, int focused) {
+  if (!focused) glfwSetWindowShouldClose(w, GLFW_TRUE);
 }
 
-GLFWwindow* prepareGlfw(int *dim) {
+GLFWwindow* prepareGlfw() {
   GLFWmonitor* monitor;
   const GLFWvidmode* mode;
-  GLFWwindow* window;
-  if (!glfwInit()) {
-    return NULL;
-  }
+  GLFWwindow* w;
+  if (!glfwInit()) goto Fail;
   monitor = glfwGetPrimaryMonitor();
-  if (!monitor) {
-    return NULL;
-  }
+  if (!monitor) goto Fail;
   mode = glfwGetVideoMode(monitor);
-  if (!mode) {
-    return NULL;
-  }
-  dim[0] = mode->width;
-  dim[1] = mode->height;
-  window = glfwCreateWindow(1, 1, WINDOW_TITLE, NULL, NULL);
-  if (!window) {
-    glfwTerminate();
-    return NULL;
-  }
-  glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
-  glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-  glfwSetCursorPos(window, 0, 0);
-  glfwSetKeyCallback(window, inputCallback);
-  glfwSetWindowIconifyCallback(window, minimizeCallback);
-  glfwMakeContextCurrent(window);
-  glDepthFunc(GL_LEQUAL);
-  glPointSize(35);
-  //glLineWidth(50);
-  glEnable(GL_BLEND);
+  if (!mode) goto Fail;
+  w = glfwCreateWindow(1, 1, WINDOW_TITLE, NULL, NULL);
+  if (!w) goto Fail;
+  glfwSetWindowMonitor(w, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+  glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  glfwSetKeyCallback(w, input);
+  glfwSetWindowFocusCallback(w, focus);
+  glfwMakeContextCurrent(w);
   glEnable(GL_DEPTH_TEST);
-  glEnable(GL_POINT_SMOOTH);
-  glEnable(GL_LINE_SMOOTH);
-  glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
-  glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  return window;
+  glDepthFunc(GL_LEQUAL);
+  glLineWidth(10);
+  return w;
+Fail:
+  glfwTerminate();
+  return NULL;
 }
