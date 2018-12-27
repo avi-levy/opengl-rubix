@@ -22,7 +22,7 @@ typedef enum Face {
   Faces // number of faces (6)
 } Face;
 
-//                               Blue     White    Red      Green     Yellow   Orange     Black
+//                                 Blue     White    Red      Green     Yellow   Orange    Black
 const float colors[Faces+1][3] = {{0,0,1}, {1,1,1}, {1,0,0}, {0,.5,0}, {1,1,0}, {1,.5,0}, {0,0,0}};
 
 // Standard ("Singmaster") Rubik's cube face notation
