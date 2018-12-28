@@ -10,6 +10,7 @@
 #include <string.h> // for memcpy, memset
 
 #define WINDOW_TITLE "RubixCube"
+#define LINE_WIDTH 10
 #define DEGREES_IN_CIRCLE 360
 
 typedef enum Face {
@@ -64,8 +65,8 @@ typedef enum orientation {
 } Orientation;
 
 typedef enum action {
-  Twist,
-  Turn,
+  Twist, // face rotation
+  Turn, // entire cube rotation
   Actions // number of actions (2)
 } Action;
 
@@ -88,16 +89,16 @@ typedef struct corner {
 
 typedef struct phys {
   FaceGeom faces[Faces];
-  unsigned int cubies;
-  unsigned int cubiesPerFace;
-  float spacing;
-  float boundingBox;
-  float scale;
+  unsigned int cubies; // number of subcubes per edge (n)
+  unsigned int cubiesPerFace; // n^2
+  float spacing; // gap between adjacent cubies divided by cubie size
+  float boundingBox; // half the cube side length
+  float scale; // zoom applied to viewport to accommodate the whole cube
 } Phys;
 
 typedef struct animationState {
-  Move actions[Actions];
-  Corner corner;
+  Move actions[Actions]; // records progress of pending actions
+  Corner corner; // records pending view corner centering operation
 } AnimationState;
 
 #define USAGE                                                           \
@@ -111,6 +112,7 @@ typedef struct animationState {
 
 GLFWwindow* prepareGlfw();
 bool initCube(const unsigned int n, const float spacing);
+void reset();
 void render(GLFWwindow* window);
 void centerOnCorner();
 void rotate(Action a);
