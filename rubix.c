@@ -21,8 +21,8 @@ int main(int argc, char *argv[]) {
       render(w);
       glfwPollEvents();
     }
+    free(data);
   }
-  free(data);
   glfwTerminate();
   return EXIT_SUCCESS;
 }
@@ -329,9 +329,7 @@ void reset() {
 // Populate global cube structures.
 //
 bool initCube(const unsigned int n, const float spacing) {
-  for (Action a = 0; a < Actions; a++) {
-    state.actions[a].f = Faces;
-  }
+  for (Action a = 0; a < Actions; a++) state.actions[a].f = Faces;
   state.corner.index = state.corner.orientation = 0;
   normalizeIsometric();
   initPhys(n, spacing);
