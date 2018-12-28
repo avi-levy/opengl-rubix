@@ -9,9 +9,7 @@ AnimationState state;
 int main(int argc, char *argv[]) {
   unsigned int n;
   GLFWwindow* w = prepareGlfw();
-  if (w == NULL) {
-    return EXIT_FAILURE;
-  }
+  if (w == NULL) return EXIT_FAILURE;
   printf("OpenGL %s\n", glGetString(GL_VERSION));
   if (argc < 2 || sscanf(argv[1], "%i", &n) != 1) {
     n = 3;
